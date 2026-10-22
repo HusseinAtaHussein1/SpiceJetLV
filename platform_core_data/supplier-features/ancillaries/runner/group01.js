@@ -128,7 +128,9 @@ const steps = [
         const inf = bag.match(/Infant Carry on baggage: (.+?) Check in baggage: (.+?)(?= Adult | Child |$)/) || [];
         const infOk = /Check with Airline/.test(inf[1] || '') && /Check with Airline/.test(inf[2] || '');
         await c.check('TC-SM-PAX-006', priced && infOk,
-          `Base fare ${bd.base.map((x) => `${x.type} ${fmt(x.amount)}`).join(', ')}; tax ${bd.tax.map((x) => `${x.type} ${fmt(x.amount)}`).join(', ')}; infant baggage: carry-on "${(inf[1] || '?').trim()}", check-in "${(inf[2] || '?').trim()}".`);
+          `Base fare ${bd.base.map((x) => `${x.type} ${fmt(x.amount)}`).join(', ')}; tax ${bd.tax.map((x) => `${x.type} ${fmt(x.amount)}`).join(', ')}; infant baggage: carry-on "${(inf[1] || '?').trim()}", check-in "${(inf[2] || '?').trim()}".`,
+          // Full page: the side panel does not scroll with the page, so only a full-page shot reaches the Infant lines.
+          { fullPage: true });
       }
 
       if (c.wants('TC-SM-NAV-002b')) {
@@ -385,11 +387,14 @@ const steps = [
       const words = {};
       for (const x of seats) for (const f of x.features) words[f] = (words[f] || 0) + 1;
       const unknownWords = Object.keys(words).filter((w) => !KNOWN_FEATURES.has(w));
+      // The screenshot is scrolled to the first seat carrying the unknown word, so it shows the proof.
+      const unknownSeat = seats.find((x) => x.features.some((f) => unknownWords.includes(f)));
       await c.check('TC-SM-STA-004', !unknownWords.length,
-        `Feature words: ${Object.entries(words).map(([w, n]) => `${w} ${n}`).join(', ')}${unknownWords.length ? ` — UNKNOWN: ${unknownWords.join(', ')}` : ' — all on the known list'}.`);
+        `Feature words: ${Object.entries(words).map(([w, n]) => `${w} ${n}`).join(', ')}${unknownSeat ? ` — UNKNOWN: ${unknownWords.join(', ')} (first on seat ${unknownSeat.n}: "${unknownSeat.label}")` : ' — all on the known list'}.`,
+        unknownSeat ? await U.showSeat(p, unknownSeat.n) : undefined);
 
       // STA-005: window/aisle from each section's own layout, never "A and F"
-      const wrong = []; const layouts = [];
+      const wrong = []; const wrongSeats = []; const layouts = [];
       for (const [sid, h] of Object.entries(heads)) {
         const cols = [...new Set(seats.filter((x) => x.section === sid).map((x) => x.col))].sort();
         if (cols.length !== h.layout.reduce((a, b) => a + b, 0)) { wrong.push(`${sid} has ${cols.join('')} for a ${h.layout.join('-')} layout`); continue; }
@@ -400,11 +405,16 @@ const steps = [
         blocks.forEach((bl, bi) => { if (bi > 0) aisle.add(bl[0]); if (bi < blocks.length - 1) aisle.add(bl[bl.length - 1]); });
         layouts.push(`${sid} ${h.layout.join('-')}: window ${[...win].join('')}, aisle ${[...aisle].join('')}`);
         for (const x of seats.filter((y) => y.section === sid)) {
-          if (x.features.includes('Window seat') !== win.has(x.col) || x.features.includes('Aisle seat') !== aisle.has(x.col)) wrong.push(x.n);
+          if (x.features.includes('Window seat') !== win.has(x.col) || x.features.includes('Aisle seat') !== aisle.has(x.col)) {
+            const where = win.has(x.col) ? 'a window position' : aisle.has(x.col) ? 'an aisle position' : 'a middle position';
+            wrong.push(`${x.n} (${where}, label "${x.label}")`);
+            wrongSeats.push(x);
+          }
         }
       }
       await c.check('TC-SM-STA-005', !wrong.length && layouts.length > 0,
-        `${layouts.join('; ')}${wrong.length ? ` — LABELS NOT MATCHING POSITION: ${wrong.slice(0, 8).join(', ')}${wrong.length > 8 ? ` (+${wrong.length - 8})` : ''}` : ' — every label matches its position'}.`);
+        `${layouts.join('; ')}${wrong.length ? ` — LABELS NOT MATCHING POSITION: ${wrong.slice(0, 8).join('; ')}${wrong.length > 8 ? ` (+${wrong.length - 8})` : ''}` : ' — every label matches its position'}.`,
+        wrongSeats.length ? await U.showSeat(p, wrongSeats[0].n) : undefined);
 
       // STA-006: exit seats; never an adult holding an infant, never a child
       const exits = seats.filter((x) => x.features.includes('Exit and emergency exit'));
@@ -508,8 +518,8 @@ const steps = [
       const priceShown = isZero(s.price) ? /\bFree\b/.test(mt) : mt.includes(s.price);
       const cabinShown = (c.state.cabins || []).some((cb) => mt.includes(cb));
       await c.check('TC-SM-SEL-003', !!rowLine && priceShown && cabinShown && mt.includes(s.side) && mt.includes(free),
-        `Box for ${free}: "${rowLine ? rowLine[0] : 'NO ROW LINE'}", price ${s.price}${priceShown ? '' : ' NOT SHOWN'}, side "${s.side}", cabin ${cabinShown ? 'shown' : 'MISSING'} — against "${s.label}".`,
-        { locator: U.mapDialog(p) });
+        `Box for ${free}: "${rowLine ? rowLine[0] : 'NO ROW LINE'}", price ${s.price}${priceShown ? '' : ` NOT FOUND in the map text (box text read: "${(mt.match(new RegExp(`Seat ${U.esc(free)}[\\s\\S]{0,160}`)) || ['?'])[0]}")`}, side "${s.side}", cabin ${cabinShown ? 'shown' : 'MISSING'} — against "${s.label}".`,
+        { locator: U.mapDialog(p).getByText(/per passenger/i).first() });
 
       const a = await U.assigned(p);
       const bb = await U.bottomButtons(p);
@@ -763,7 +773,8 @@ const steps = [
       if (a.seats !== '[]' && b.seats === '[]') lost.push('seats');
       for (const k of ['Meal Preference', 'Extra Baggage', 'Seat Selection']) if (k in JSON.parse(a.lines) && !(k in JSON.parse(b.lines))) lost.push(k.toLowerCase());
       const ev = `Edited ${child.firstName}'s title on step 1 (${edit}) and pressed Next: ${lost.length ? `${lost.join(', ')} silently discarded` : 'every choice kept'}; amount ${fmt(a.pub)} → ${fmt(b.pub)}; opener "${b.opener}".`;
-      if (lost.length) await c.fail('TC-SM-CNF-018', `Known fault reproduced. ${ev}`, { locator: p.getByRole('button', { name: U.OPENER }).first() });
+      // Full page: the seat card (no seat any more) and the price breakdown (no seat line) are both the proof.
+      if (lost.length) await c.fail('TC-SM-CNF-018', `Known fault reproduced. ${ev}`, { fullPage: true });
       else await c.pass('TC-SM-CNF-018', ev);
     },
   },

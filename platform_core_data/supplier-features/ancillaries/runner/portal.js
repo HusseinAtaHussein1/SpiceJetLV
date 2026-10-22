@@ -267,10 +267,20 @@ async function clickCard(page, index) {
 async function priceUpdateOrPassengers(page, timeoutMs = 45000) {
   const pax = page.getByRole('region', { name: ' 1- Adult' });
   const dlg = priceDialog(page);
+  // Spicejet shows a "Branded Fares" dialog after Book Flight; Proceed keeps the fare already chosen.
+  const branded = page.getByRole('dialog').filter({ hasText: 'Branded Fares' }).first();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await pax.isVisible().catch(() => false)) return 'passengers';
     if (await dlg.isVisible().catch(() => false)) return 'priceUpdate';
+    if (await branded.isVisible().catch(() => false)) {
+      // The dialog is a carousel with one Proceed per fare; take the fare it opens on.
+      // A timed-out click is not a failure here: the page may already be moving on, so the loop re-checks.
+      await branded.getByRole('button', { name: 'Proceed', exact: true }).filter({ visible: true }).first()
+        .click({ noWaitAfter: true, timeout: 5000 }).catch(() => {});
+      await wait(page, 1000);
+      continue;
+    }
     await wait(page, 500);
   }
   throw new Error('neither the Price Update pop-up nor Passenger Details appeared');
@@ -379,6 +389,7 @@ async function setAssignedTo(page, infantSec, assignTo) {
  * ages BEFORE Next — an out-of-range age makes add-pax return 400 and Next does nothing visible.
  */
 async function fillPassengers(page, s, pax, docs) {
+  if (s.passengerData === 'generated') return fillPassengersGenerated(page, s, pax, docs);
   const travellers = [];
   const usedNames = new Set();
   for (const { sec, type, key, i } of sections(pax)) {
@@ -410,6 +421,102 @@ async function fillPassengers(page, s, pax, docs) {
   const today = new Date();
   const badAge = travellers.find((t) => !t.dob || !AGE_OK[t.type](ageYears(t.dob, today)));
   if (badAge) throw new Error(`age check: ${badAge.name} (${badAge.type}) born ${badAge.dob || '?'} is outside the ${badAge.type} range`);
+  return { travellers, assignedOptions };
+}
+
+// ---- generated passengers (settings.passengerData === 'generated', human decision 2026-10-22):
+// no saved profile, no Select passenger dialog — every passenger is typed into the form with Faker data.
+// Names are unique across the whole run (first AND last), and no first name is a substring of another,
+// because the infant's "Assigned to" option is matched by the adult's first name.
+// The Portal's Title list offers only Mr / Ms / Mrs for every passenger type (seen live on Spicejet, 2026-10-22).
+const TITLE_BY = { Adult: { Male: 'Mr', Female: 'Ms' }, Child: { Male: 'Mr', Female: 'Ms' }, Infant: { Male: 'Mr', Female: 'Ms' } };
+const usedFirst = [];
+const usedLast = new Set();
+
+function generatePerson(type, gender) {
+  const { faker } = require('@faker-js/faker');
+  const letters = (v) => String(v).replace(/[^A-Za-z]/g, '');
+  const sex = gender.toLowerCase();
+  let first;
+  do first = letters(faker.person.firstName(sex));
+  while (first.length < 4 || usedFirst.some((u) => u.includes(first.toLowerCase()) || first.toLowerCase().includes(u)));
+  usedFirst.push(first.toLowerCase());
+  let last;
+  do last = letters(faker.person.lastName());
+  while (last.length < 4 || usedLast.has(last.toLowerCase()));
+  usedLast.add(last.toLowerCase());
+  const now = new Date();
+  const pick = (a, b) => faker.number.int({ min: a, max: b });
+  const dob = type === 'Infant'
+    ? new Date(now.getFullYear(), now.getMonth() - pick(4, 9), 15)
+    : new Date(now.getFullYear() - (type === 'Child' ? pick(5, 10) : pick(25, 50)), pick(0, 11), pick(10, 20));
+  const dmy = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  return {
+    first, last, gender, title: TITLE_BY[type][gender], dob: dmy(dob),
+    email: `${first}.${last}@example.com`.toLowerCase(),
+    phone: `10${faker.string.numeric(8)}`,
+    expiry: dmy(new Date(now.getFullYear() + 8, 5, 15)),
+  };
+}
+
+/** Types a value into a date field (PrimeNG calendar): a plain fill is ignored, so key by key, then Tab. */
+async function typeDate(page, box, value) {
+  await box.click();
+  await box.press('Control+A');
+  await box.press('Delete');
+  await box.pressSequentially(value, { delay: 40 });
+  await page.keyboard.press('Tab');
+}
+
+async function pickFromDropdown(page, r, label, option) {
+  await r.locator('div.p-dropdown').filter({ has: page.getByRole('combobox', { name: label }) }).first().click();
+  await page.getByRole('option', { name: option, exact: true }).filter({ visible: true }).first().click();
+  await wait(page, 250);
+}
+
+/** Runs one form action; a failure names the passenger section and field, not just "click timed out". */
+async function field(sec, name, fn) {
+  try { await fn(); } catch (e) { throw new Error(`passenger ${sec}, field "${name}": ${String(e.message).split(/\r?\n/)[0]}`); }
+}
+
+async function fillPassengersGenerated(page, s, pax, docs) {
+  const travellers = [];
+  const adultFirstNames = [];
+  let adultIdx = 0;
+  for (const { sec, type, key, i } of sections(pax)) {
+    const want = ((s.criteria || {})[key] || [])[i - 1] || {};
+    const gender = want.gender || (type === 'Adult' ? (adultIdx % 2 === 0 ? 'Male' : 'Female') : (i % 2 === 1 ? 'Male' : 'Female'));
+    if (type === 'Adult') adultIdx += 1;
+    const person = generatePerson(type, gender);
+    await openSection(page, sec);
+    const r = region(page, sec);
+    await field(sec, 'Title', () => pickFromDropdown(page, r, /^Title/, person.title));
+    await field(sec, 'First Name', () => r.getByRole('textbox', { name: 'First Name *' }).fill(person.first));
+    await field(sec, 'Last Name', () => r.getByRole('textbox', { name: 'Last Name *' }).fill(person.last));
+    await field(sec, 'Date of Birth', () => typeDate(page, r.getByRole('textbox', { name: 'Date of Birth *' }), person.dob));
+    // The Portal sets Gender from the Title and locks it (Mr/Master → Male, Ms/Miss → Female): only pick it if it differs.
+    await field(sec, 'Gender', async () => {
+      const shown = norm(await r.locator('div.p-dropdown').filter({ has: page.getByRole('combobox', { name: /^Gender/ }) }).first().innerText());
+      if (shown !== person.gender) await pickFromDropdown(page, r, /^Gender/, person.gender);
+    });
+    await field(sec, 'Email', () => r.getByRole('textbox', { name: 'Email *' }).fill(person.email));
+    await field(sec, 'Phone', () => r.locator('input[type="tel"]').first().fill(person.phone));
+    const doc = docs.shift();
+    await field(sec, 'Document Number', () => r.getByRole('textbox', { name: 'Document Number *' }).fill(doc));
+    await field(sec, 'Document Expiry', () => typeDate(page, r.getByRole('textbox', { name: 'Document Expiry *' }), person.expiry));
+    await field(sec, 'Nationality', () => pickFromDropdown(page, r, /^Nationality/, s.nationality || 'Egypt'));
+    if (type === 'Adult') adultFirstNames.push(person.first);
+    travellers.push({ sec, type, name: `${person.first} ${person.last}`, firstName: person.first, doc, dob: person.dob, title: person.title });
+  }
+  // Each infant goes to its own adult (the Portal refuses a second infant on the same adult).
+  let assignedOptions = [];
+  for (const { sec, i } of sections(pax).filter((x) => x.type === 'Infant')) {
+    const want = ((s.criteria || {}).infants || [])[i - 1] || {};
+    assignedOptions = await setAssignedTo(page, sec, want.assignTo || adultFirstNames[Math.min(i - 1, adultFirstNames.length - 1)]);
+  }
+  const today = new Date();
+  const badAge = travellers.find((t) => !AGE_OK[t.type](ageYears(t.dob, today)));
+  if (badAge) throw new Error(`age check: ${badAge.name} (${badAge.type}) born ${badAge.dob} is outside the ${badAge.type} range`);
   return { travellers, assignedOptions };
 }
 
@@ -661,6 +768,16 @@ async function bookSeat(page, n, firstName) {
   await wait(page, 450);
 }
 
+/** Evidence for a seat: centres it and hovers it so its own box (features, price) is on screen.
+ * Returns the shot to pass to check/fail. The runner's own centring is then a no-op. */
+async function showSeat(page, n) {
+  const loc = seatLoc(page, n);
+  await loc.evaluate((el) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+  await loc.hover({ force: true }).catch(() => {});
+  await wait(page, 400);
+  return { locator: loc };
+}
+
 async function seatState(page, n) {
   return parseSeat(await seatLoc(page, n).getAttribute('aria-label'));
 }
@@ -765,6 +882,6 @@ module.exports = {
   onStep2, nextToStep2, nextExpectingToStay, prevToStep1,
   published, breakdown, selectedSeats, openerText,
   mapDialog, seatLoc, parseSeat, readSeats, mapOpen, openMap, openMapAt, openerTexts, ensureMapClosed, mapText, assigned, bottomButtons, activate, clickSeat,
-  bookButton, bookSeat, seatState, confirmSeats, continueWithoutSeats, clearAll, sectionHeaders, plainSeats,
+  bookButton, bookSeat, seatState, showSeat, confirmSeats, continueWithoutSeats, clearAll, sectionHeaders, plainSeats,
   dropdown, dropdownAt, dropdownCount, dropdownOptions, dropdownOptionsAt, expandPassengerCard, chooseOption, clearDropdown, parseMeal, parseBag,
 };

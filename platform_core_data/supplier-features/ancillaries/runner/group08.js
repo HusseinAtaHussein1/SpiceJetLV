@@ -110,7 +110,9 @@ const steps = [
       } else if (!matesBlocked && otherFree) {
         await c.pass('TC-SM-PAX-008', `${adultA.firstName} (holds an infant) took ${candidate.n}. For ${adultB.firstName} (also holds an infant): set-mates ${matesText} — NOT blocked by the map; ${other.n} in the other set "${tail(other.label)}" — free. Passed by the recorded business ruling (27 Sep 2026: the airline enforces this at booking, not the seat map). Not verified with a completed booking.`);
       } else {
-        await c.fail('TC-SM-PAX-008', `${adultA.firstName} took ${candidate.n}. For ${adultB.firstName}: set-mates ${matesText}; other-set seat ${other ? `${other.n} "${tail(other.label)}"` : 'none found'} — ${otherFree ? '' : 'a seat in a DIFFERENT set is not available to B either, which the rule does not call for.'}`, { locator: U.mapDialog(p) });
+        await c.fail('TC-SM-PAX-008', `${adultA.firstName} took ${candidate.n}. For ${adultB.firstName}: set-mates ${matesText}; other-set seat ${other ? `${other.n} "${tail(other.label)}"` : 'none found'} — ${otherFree ? '' : 'a seat in a DIFFERENT set is not available to B either, which the rule does not call for.'}`,
+          // Evidence: the row itself — the other-set seat B could not take, centred and hovered, with B active.
+          await U.showSeat(p, other && !otherFree ? other.n : mates[0] || candidate.n));
       }
       await U.ensureMapClosed(p);
     },

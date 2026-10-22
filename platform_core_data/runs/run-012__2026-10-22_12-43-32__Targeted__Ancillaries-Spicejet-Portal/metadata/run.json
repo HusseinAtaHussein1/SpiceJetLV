@@ -1,0 +1,28 @@
+{
+  "folderName": "run-012__2026-10-22_12-43-32__Targeted__Ancillaries-Spicejet-Portal",
+  "index": 12,
+  "scope": "Targeted",
+  "target": "Ancillaries-Spicejet-Portal",
+  "workflow": "unversioned",
+  "targetRef": "abc65c8a4c607b9741b5fdca6dbd2810ef4b7e6c",
+  "targetRefScope": [],
+  "targetRefCapturedAt": "2026-10-22T09:43:32.836Z",
+  "targetRepoRoot": "C:/Users/SH/Downloads/SpiceJet Seatmap/agentic-ai-testing-platform",
+  "targetRefReason": "git repository at C:/Users/SH/Downloads/SpiceJet Seatmap/agentic-ai-testing-platform",
+  "createdBy": "Run Manager",
+  "startedTime": "2026-10-22T09:43:32.836Z",
+  "status": "Preparing",
+  "scopeFamily": "supplier-feature",
+  "feature": "ancillaries",
+  "supplier": "spicejet",
+  "sharedScope": null,
+  "testingLayerScope": [
+    "Portal"
+  ],
+  "scopeHistory": [],
+  "environment": {
+    "portal": "http://192.168.1.90:9500",
+    "credentialName": "SpiceJetxxxx",
+    "execution": "Headed"
+  }
+}

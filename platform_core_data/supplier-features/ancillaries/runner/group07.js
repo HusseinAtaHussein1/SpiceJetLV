@@ -65,7 +65,9 @@ const steps = [
       if (!beforeOk) {
         // The rule is not enforced on the map to begin with (OmanAir, 2026-10-19: an adult holding an infant is
         // offered the exit seat) — a refusal that does not exist cannot follow the infant to another adult.
-        await c.fail('TC-SM-EXR-005', `Infant linked to ${adultA.firstName}: seat ${seat} — A (holds the infant) "${tail(before.a.label)}", B "${tail(before.b.label)}". Expected A refused and B allowed; ${before.a.state === 'available' ? 'the adult holding the infant is OFFERED the exit seat, so there is no refusal to follow the infant to another adult' : 'B is not allowed either'}. The re-link half was not run.`, { locator: U.mapDialog(p) });
+        // Evidence: the exit seat itself, centred and hovered, with adult B active (B should be allowed).
+        const exitShot = await U.showSeat(p, seat);
+        await c.fail('TC-SM-EXR-005', `Infant linked to ${adultA.firstName}: seat ${seat} — A (holds the infant) "${tail(before.a.label)}", B "${tail(before.b.label)}". Expected A refused and B allowed; ${before.a.state === 'available' ? 'the adult holding the infant is OFFERED the exit seat, so there is no refusal to follow the infant to another adult' : 'B is not allowed either'}. The re-link half was not run.`, exitShot);
         await U.ensureMapClosed(p);
         return;
       }

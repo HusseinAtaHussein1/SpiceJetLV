@@ -64,9 +64,12 @@ const steps = [
       if (!exits.length) {
         // Exit-row presence and availability are flight-specific (documented); a different flight
         // from a different search just won't always have one — not a reason to fail the run.
-        const ev = 'No bookable "Exit and emergency exit" seat on this flight\'s map — needs a flight whose inventory actually offers one.';
-        await c.inconclusive('TC-SM-EXR-003', ev);
-        await c.inconclusive('TC-SM-EXR-004', ev);
+        // Evidence: the exit row itself, so the screenshot shows its seats are not bookable.
+        const anyExit = seats.filter((x) => x.features.includes('Exit and emergency exit'));
+        const ev = `No bookable "Exit and emergency exit" seat on this flight's map — ${anyExit.length ? `the ${anyExit.length} exit seats are all ${[...new Set(anyExit.map((x) => x.state))].join('/')} (e.g. ${anyExit[0].n}: "${anyExit[0].label}")` : 'the map has no exit seats at all'}. Needs a flight whose inventory actually offers one.`;
+        const shot = anyExit.length ? await U.showSeat(p, anyExit[0].n) : undefined;
+        await c.inconclusive('TC-SM-EXR-003', ev, shot);
+        await c.inconclusive('TC-SM-EXR-004', ev, shot);
         await U.ensureMapClosed(p);
         return;
       }
@@ -126,8 +129,21 @@ const steps = [
         }
         const everyoneHasList = count >= n && perPax.every((opts) => opts.length > 0);
         const everyOptionWeighted = perPax.every((opts) => opts.every((o) => o.kg > 0 && o.price > 0));
+        // Evidence: the first passenger's baggage dropdown left OPEN, so the screenshot shows its (empty) list.
+        let shot;
+        const emptyAt = perPax.findIndex((opts) => !opts.length);
+        if (emptyAt >= 0) {
+          await U.expandPassengerCard(p, emptyAt + 1);
+          const dd = U.dropdownAt(p, 'Choose a baggage', emptyAt);
+          await dd.evaluate((el) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+          await dd.click().catch(() => {});
+          await U.wait(p, 500);
+          shot = { locator: dd };
+        }
         await c.check('TC-BG-001', everyoneHasList && everyOptionWeighted,
-          `${count} baggage dropdown(s) for ${n} non-infant passengers. ${perPax.map((opts, i) => `${c.state.travellers[i].firstName}: ${opts.map((o) => `${o.name} ${o.price}`).join(', ') || 'NO LIST'}`).join('; ')}.`);
+          `${count} baggage dropdown(s) for ${n} non-infant passengers. ${perPax.map((opts, i) => `${c.state.travellers[i].firstName}: ${opts.map((o) => `${o.name} ${o.price}`).join(', ') || 'NO LIST'}`).join('; ')}.`,
+          shot);
+        if (shot) await p.keyboard.press('Escape').catch(() => {});
       }
     },
   },

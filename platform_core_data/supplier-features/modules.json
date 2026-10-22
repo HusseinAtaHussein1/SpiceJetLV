@@ -132,7 +132,7 @@
       "kind": "supplier_feature",
       "integrationLayer": null,
       "createdAt": "2026-09-04T10:49:38.245Z",
-      "updatedAt": "2026-10-05T12:54:30.589Z",
+      "updatedAt": "2026-10-22T05:46:01.030Z",
       "supersededBy": null,
       "stages": {
         "context": {
@@ -495,6 +495,85 @@
           "supplierRules": [],
           "supplierRulesSetAt": "2026-10-04T14:15:30.885Z",
           "supplierRulesSetBy": "Mohanad Dawood"
+        },
+        {
+          "slug": "spicejet",
+          "name": "Spicejet",
+          "description": null,
+          "feature": "ancillaries",
+          "status": "Active",
+          "createdAt": "2026-10-22T05:45:55.708Z",
+          "updatedAt": "2026-10-22T05:46:01.030Z",
+          "supersededBy": null,
+          "stages": {
+            "context": {
+              "status": "Not Started",
+              "artifactPath": null,
+              "lastRun": null,
+              "lastUpdated": null,
+              "revisionCount": 0,
+              "targetRefAtWrite": null
+            },
+            "discovery": {
+              "status": "Not Started",
+              "artifactPath": null,
+              "lastRun": null,
+              "lastUpdated": null,
+              "revisionCount": 0,
+              "targetRefAtWrite": null
+            },
+            "test_design": {
+              "status": "Not Started",
+              "artifactPath": null,
+              "lastRun": null,
+              "lastUpdated": null,
+              "revisionCount": 0,
+              "targetRefAtWrite": null
+            },
+            "automation": {
+              "status": "Not Started",
+              "artifactPath": null,
+              "lastRun": null,
+              "lastUpdated": null,
+              "revisionCount": 0,
+              "targetRefAtWrite": null
+            },
+            "healing": {
+              "status": "Not Started",
+              "artifactPath": null,
+              "lastRun": null,
+              "lastUpdated": null,
+              "revisionCount": 0,
+              "targetRefAtWrite": null
+            }
+          },
+          "approvedAt": "2026-10-22T05:46:00.214Z",
+          "approvedBy": "Hussein",
+          "capabilities": {
+            "hold": "Supported",
+            "payAfterHold": "Supported",
+            "meal": "Supported",
+            "baggage": "Supported",
+            "seat": "Supported",
+            "bundle": "Not Supported"
+          },
+          "capabilityHistory": [
+            {
+              "at": "2026-10-22T05:46:00.766Z",
+              "by": "Hussein",
+              "changes": {
+                "hold": "Supported",
+                "payAfterHold": "Supported",
+                "meal": "Supported",
+                "baggage": "Supported",
+                "seat": "Supported",
+                "bundle": "Not Supported"
+              }
+            }
+          ],
+          "supplierRules": [],
+          "supplierRulesSetAt": "2026-10-22T05:46:01.030Z",
+          "supplierRulesSetBy": "Hussein"
         }
       ]
     }

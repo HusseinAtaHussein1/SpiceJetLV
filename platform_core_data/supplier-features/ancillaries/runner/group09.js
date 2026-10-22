@@ -70,11 +70,14 @@ const steps = [
         await p.getByRole('option', { name, exact: true }).filter({ visible: true }).first().click();
         await U.wait(p, 600);
       };
-      const j1 = await U.chooseBundleForNextLeg(p); // journey 1 gets the first package
+      // A supplier with no fare packages (Spicejet) has no "Choose a bundle" dropdown at all: nothing to pick.
+      const noPackages = (await U.bundlesRemaining(p)) === 0;
+      c.state.noPackages = noPackages;
+      const j1 = noPackages ? { names: [], chosen: null } : await U.chooseBundleForNextLeg(p); // journey 1 gets the first package
       const names = j1.names;
       const known = {};
       let pk1 = j1.chosen;
-      known[pk1] = await allSeatsText(pk1);
+      if (!noPackages) known[pk1] = await allSeatsText(pk1);
       for (const n of names) {
         if (known[pk1]) break;
         if (n === pk1) continue; // never re-pick the selected option — that clears it
@@ -83,8 +86,8 @@ const steps = [
         known[n] = await allSeatsText(n);
       }
       let pk2 = null;
-      if (await U.bundlesRemaining(p)) {
-        const order = names.filter((n) => n !== pk1).sort((a, b) => (known[a] === false ? -1 : 0) - (known[b] === false ? -1 : 0));
+      if (!noPackages && await U.bundlesRemaining(p)) {
+        const order =names.filter((n) => n !== pk1).sort((a, b) => (known[a] === false ? -1 : 0) - (known[b] === false ? -1 : 0));
         pk2 = (await U.chooseBundleForNextLeg(p, order[0])).chosen;
         for (const n of order.slice(1)) {
           if (!(await allSeatsText(pk2))) break; // journey 1 holds a different name, so this reads journey 2's
@@ -93,7 +96,7 @@ const steps = [
         }
       }
       c.state.packages = [pk1, pk2];
-      c.env('Packages', `journey 1: '${pk1}'${known[pk1] ? ' ("Seat selection: All seats")' : ' (no package says "All seats")'} · journey 2: ${pk2 ? `'${pk2}'` : 'NONE OFFERED'}`);
+      c.env('Packages', noPackages ? 'none — this supplier has no fare packages' : `journey 1: '${pk1}'${known[pk1] ? ' ("Seat selection: All seats")' : ' (no package says "All seats")'} · journey 2: ${pk2 ? `'${pk2}'` : 'NONE OFFERED'}`);
 
       await U.acceptTerms(p);
       await U.nextToStep2(p, 60000);
@@ -126,8 +129,12 @@ const steps = [
         for (const id of ['TC-SM-BND-003', 'TC-SM-RTP-003']) await c.inconclusive(id, 'Only one journey\'s seat map was reachable.');
         return;
       }
+      if (c.state.noPackages) {
+        for (const id of ['TC-SM-BND-003', 'TC-SM-RTP-003']) await c.na(id, 'This supplier has no fare packages, so there is no package to price each journey by.');
+        return;
+      }
       const [pk1, pk2] = c.state.packages;
-      const ev2 = `Journey 1 under '${pk1}': ${m1.available} selectable — ${m1.free} free, ${m1.paid} paid. Journey 2 under '${pk2}': ${m2.available} selectable — ${m2.free} free, ${m2.paid} paid.`;
+      const ev2 =`Journey 1 under '${pk1}': ${m1.available} selectable — ${m1.free} free, ${m1.paid} paid. Journey 2 under '${pk2}': ${m2.available} selectable — ${m2.free} free, ${m2.paid} paid.`;
       const independent = m1.paid === 0 && m2.paid > 0;
       await c.check('TC-SM-BND-003', independent, `${ev2} ${independent ? 'Each journey is priced by its own package.' : 'The two journeys are NOT priced independently by their own packages.'}`);
       await c.check('TC-SM-RTP-003', independent, `${ev2} ${independent ? "Journey 2's paid tier does not leak into journey 1's all-free map." : 'Prices did not follow each journey\'s own package.'}`);
